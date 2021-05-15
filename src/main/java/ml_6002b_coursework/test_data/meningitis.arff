@@ -1,0 +1,20 @@
+@RELATION meningitis
+
+@ATTRIBUTE headache  {0,1}
+@ATTRIBUTE spots   {0,1}
+@ATTRIBUTE stiffneck  {0,1}
+@ATTRIBUTE target    {0,1}
+@DATA
+
+1, 1, 1, 1
+0, 1, 1, 1
+0, 1, 0, 1
+1, 0, 1, 1
+0, 1, 1, 1
+1, 0, 1, 1
+0, 1, 0, 0
+0, 0, 1, 0
+0, 1, 0, 0
+1, 0, 1, 0
+1, 0, 0, 0
+0, 0, 0, 0

@@ -22,6 +22,10 @@
 
 package ml_6002b_coursework;
 
+import com.sun.scenario.effect.impl.sw.sse.SSEBlend_SRC_OUTPeer;
+import org.yaml.snakeyaml.events.Event;
+import scala.Array;
+import scala.None;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Sourcable;
 import weka.core.*;
@@ -29,7 +33,13 @@ import weka.core.Capabilities.Capability;
 import weka.core.TechnicalInformation.Field;
 import weka.core.TechnicalInformation.Type;
 
+import javax.rmi.CORBA.Util;
+import java.util.Arrays;
 import java.util.Enumeration;
+
+import static ml_6002b_coursework.WekaTools.loadClassificationData;
+import static ml_6002b_coursework.WekaTools.splitData;
+import static utilities.InstanceTools.resampleInstances;
 
 /**
 
@@ -93,7 +103,6 @@ public class ID3Coursework
   private Attribute m_ClassAttribute;
   private AttributeSplitMeasure attSplit = new IGAttributeSplitMeasure();
 
-
   /**
    * Returns a string describing the classifier.
    * @return a description suitable for the GUI.
@@ -140,15 +149,69 @@ public class ID3Coursework
 
     // attributes
     result.enable(Capability.NOMINAL_ATTRIBUTES);
+    result.enable(Capability.NUMERIC_ATTRIBUTES);
 
     // class
     result.enable(Capability.NOMINAL_CLASS);
+    result.enable(Capability.NUMERIC_CLASS);
     result.enable(Capability.MISSING_CLASS_VALUES);
 
     // instances
     result.setMinimumNumberInstances(0);
     
     return result;
+  }
+
+  /* SET OPTIONS
+  Sets options for building the tree
+  Allows the splitting criteria to be set
+  '-S'   -   splitting criteria option flag
+
+  'i'   -   information gain
+  'g'   -   gini
+  'c'   -   chi-squared
+  'y'   -   chi-squared yates
+
+  SET TO INFORMATION GAIN BY DEFAULT
+   */
+  public void setOptions(String[] options) throws Exception {
+    String splitCriteria = Utils.getOption('S', options);
+    if(splitCriteria.equals("i")) {
+      attSplit = new IGAttributeSplitMeasure();
+    }
+    else if(splitCriteria.equals("g")) {
+      attSplit = new GiniAttributeSplitMeasure();
+    }
+    else if(splitCriteria.equals("c")) {
+      attSplit = new ChiSquaredAttributeSplitMeasure();
+    }
+    else if(splitCriteria.equals("y")) {
+      attSplit = new ChiSquaredAttributeSplitMeasure(true);
+    }
+    //default case if none satisfied
+    else {
+      System.out.println("Split criteria option not found: " + splitCriteria + ". Set to information gain by default");
+      attSplit = new IGAttributeSplitMeasure();
+    }
+  }
+//retrieve options for classifier
+  public String[] getOptions() {
+    String[] options = new String[2];
+    options[0] = "-S";
+    if(attSplit instanceof IGAttributeSplitMeasure) {
+      options[1] = "i";
+    }
+    else if(attSplit instanceof  GiniAttributeSplitMeasure) {
+      options[1] = "g";
+    }
+    else if(attSplit instanceof  ChiSquaredAttributeSplitMeasure) {
+      if(((ChiSquaredAttributeSplitMeasure) attSplit).isYates()) {
+        options[1] = "y";
+      } else {
+        options[1] = "c";
+      }
+    }
+    return options;
   }
 
   /**
@@ -184,6 +247,14 @@ public class ID3Coursework
       m_Distribution = new double[data.numClasses()];
       return;
     }
+    else if (data.numInstances() == 1 || data.classAttribute().numValues() == 1) {
+      m_Attribute = null;
+      m_ClassValue = data.get(0).classValue();
+      m_Distribution = new double[data.numClasses()];
+      m_Distribution[(int) m_ClassValue] = data.numInstances();
+      m_ClassAttribute = data.classAttribute();
+      return;
+    }
 
     // Compute attribute with maximum information gain.
     double[] infoGains = new double[data.numAttributes()];
@@ -192,26 +263,48 @@ public class ID3Coursework
       Attribute att = (Attribute) attEnum.nextElement();
       infoGains[att.index()] = attSplit.computeAttributeQuality(data, att);
     }
+    //System.out.println("using " + attSplit);
+    /*
+    if (Double.isNaN(infoGains[0]) || Double.isNaN(infoGains[1]) || Double.isNaN(infoGains[2])) {
+      System.exit(0);
+    } */
+    for(int i=0; i<infoGains.length; i++) {
+      if(Double.isNaN(infoGains[i])) {
+        System.exit(0);
+      }
+    }
+    //set largest attribute based on which has the most information gain
+    //System.out.println(Arrays.toString(infoGains));
     m_Attribute = data.attribute(Utils.maxIndex(infoGains));
-    
-    // Make leaf if information gain is zero. 
+    //System.out.println(m_Attribute);
+    // Make leaf if information gain is zero.
     // Otherwise create successors.
     if (Utils.eq(infoGains[m_Attribute.index()], 0)) {
+      //System.out.println("create leaf for " + m_Attribute.name());
       m_Attribute = null;
       m_Distribution = new double[data.numClasses()];
+      //System.out.println(data.numInstances());
       Enumeration instEnum = data.enumerateInstances();
       while (instEnum.hasMoreElements()) {
         Instance inst = (Instance) instEnum.nextElement();
+        //System.out.println(inst.classValue());
         m_Distribution[(int) inst.classValue()]++;
       }
       Utils.normalize(m_Distribution);
       m_ClassValue = Utils.maxIndex(m_Distribution);
       m_ClassAttribute = data.classAttribute();
     } else {
+      //splitdata is an array of Instances objects for each attribute value then goes and adds each Instance
+      //in the dataset to whichever Instances it belongs to
+      //this splits the data and then each successor will make a tree from it
+      //System.out.println("creating successors for " + m_Attribute.name());
       Instances[] splitData = attSplit.splitData(data, m_Attribute);
+      //System.out.println("num instances");
+      //System.out.println(data.numInstances());
       m_Successors = new ID3Coursework[m_Attribute.numValues()];
       for (int j = 0; j < m_Attribute.numValues(); j++) {
         m_Successors[j] = new ID3Coursework();
+        m_Successors[j].setOptions(this.getOptions());
         m_Successors[j].makeTree(splitData[j]);
       }
     }
@@ -420,12 +513,118 @@ public class ID3Coursework
     return RevisionUtils.extract("$Revision: 6404 $");
   }
 
+  public String getAtt() {
+    return attSplit.getClass().getSimpleName();
+  }
+
   /**
    * Main method.
    *
    * @param args the options for the classifier
    */
-  public static void main(String[] args) {
-    runClassifier(new ID3Coursework(), args);
+  ////////////////MAIN METHOD
+  public static void main(String[] args) throws Exception {
+    //load in dataset
+    /*
+    Instances data = WekaTools.loadClassificationData("src/main/java/ml_6002b_coursework/test_data/optdigits.arff");
+    //set target attribute
+    data.setClassIndex(data.numAttributes() - 1);
+    System.out.println("optdigits.arff before split: ");
+    Enumeration insenum = data.enumerateInstances();
+    for(int i=0; i<5; i++) {
+      Instance ins = (Instance) insenum.nextElement();
+      System.out.println(ins.toString());
+    }
+    AttributeSplitMeasure asm = new GiniAttributeSplitMeasure();
+    //iterate over all attributes in dataset and convert to nominal
+    Enumeration attEnum = data.enumerateAttributes();
+    while (attEnum.hasMoreElements()) {
+      Attribute att = (Attribute) attEnum.nextElement();
+      Instances[] splitdata = asm.splitDataOnNumeric(data, att).getKey();
+    }
+    System.out.println("optdigits.arff after split: ");
+    insenum = data.enumerateInstances();
+    for(int i=0; i<5; i++) {
+      Instance ins = (Instance) insenum.nextElement();
+      System.out.println(ins.toString());
+    }
+    // THROWS ERROR FOR OPTDIGITS.ARFF DATA - TREE DESIGNED TO BE USED FOR BINARY CLASSES
+    //build classifiers for each criteria and output
+    ID3Coursework c = new ID3Coursework();
+    //initialise options
+    String[] options = new String[2];
+    options[0] = "-S";
+    //train test split
+    Instances[] trainTestSplit = WekaTools.splitData(data, 0.6);
+    Instances train = trainTestSplit[0];
+    Instances test = trainTestSplit[1];
+    c.buildClassifier(train);
+    options[1] = "g";
+    c.setOptions(options); */
+    Instances chinatownTrain = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Chinatown_TRAIN.arff");
+    Instances chinatownTest = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Chinatown_TEST.arff");
+
+    Instances optdigits = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/optdigits.arff");
+    Instances[] trainTest = resampleInstances(optdigits, 0, 0.7);
+    Instances optdigitsTrain = trainTest[0];
+    Instances optdigitsTest = trainTest[1];
+
+    //Instances diagnosis = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Diagnosis_TRAIN.arff");
+
+    try{
+      Instances[] splits = splitData(optdigits, 0.5);
+
+      ID3Coursework id3 = new ID3Coursework();
+
+      //initialise options
+      String[] options = new String[2];
+      options[0] = "-S";
+      //use infogain
+      options[1] = "i";
+      id3.setOptions(options);
+      id3.buildClassifier(optdigitsTrain);
+      //id3.buildClassifier(chinatownTrain);
+      System.out.println(id3.getAtt());
+      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+              + WekaTools.accuracy(id3, optdigitsTest));
+
+      //use gini
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "g";
+      id3.setOptions(options);
+      //id3.buildClassifier(chinatownTrain);
+      id3.buildClassifier(optdigitsTrain);
+      System.out.println(id3.getAtt());
+      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+              + WekaTools.accuracy(id3, optdigitsTest));
+
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "c";
+      id3.setOptions(options);
+      id3.buildClassifier(optdigitsTrain);
+      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+              + WekaTools.accuracy(id3, optdigitsTest));
+
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "y";
+      id3.setOptions(options);
+      id3.buildClassifier(optdigitsTrain);
+      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+              + WekaTools.accuracy(id3, optdigitsTest));
+
+      /*ID3Coursework yatesID3 = new ID3Coursework(new ChiSquaredAttributeSplitMeasure(true));
+      options[0] = "-Y";
+      yatesID3.setOptions(options);
+      yatesID3.buildClassifier(optdigits);
+      System.out.println("Id3 using measure " + yatesID3.getAtt() + " yates on JW Problem has test accuracy = "
+              + WekaTools.accuracy(yatesID3, optdigits));*/
+
+    }
+    catch (Exception e){
+      e.printStackTrace();
+    }
   }
 }
