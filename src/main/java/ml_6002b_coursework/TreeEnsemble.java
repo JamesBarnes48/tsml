@@ -382,12 +382,13 @@ public class TreeEnsemble
         c.setVoting(true);
         double acc = WekaTools.accuracy(c, split[1]);
         System.out.println("Test accuracy: " + acc);
-        Enumeration insenum = data.enumerateInstances();
+        Enumeration insenum = split[1].enumerateInstances();
         for(int i=0; i<5; i++) {
             Instance ins = (Instance) insenum.nextElement();
             double[] dis = c.distributionForInstance(ins);
             System.out.println("Probability distribution for instance:");
-            System.out.println(Arrays.toString(dis));
+            System.out.println(c.classifyInstance(ins));
+            //System.out.println(Arrays.toString(dis));
         }
     }
 
