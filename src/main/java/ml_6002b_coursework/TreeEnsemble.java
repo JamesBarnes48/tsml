@@ -4,9 +4,13 @@ import weka.classifiers.AbstractClassifier;
 import weka.classifiers.meta.Bagging;
 import weka.core.*;
 import weka.filters.Filter;
+import weka.filters.unsupervised.attribute.RandomSubset;
 import weka.filters.unsupervised.attribute.Remove;
 
 import java.util.*;
+import java.util.stream.IntStream;
+
+import static utilities.Utilities.argMax;
 
 public class TreeEnsemble
         extends AbstractClassifier
@@ -30,6 +34,9 @@ public class TreeEnsemble
      * The random seed.
      */
     protected int m_randomSeed = 2;
+
+    private final LinkedHashMap<ID3Coursework, RandomSubset> attributesUsed = new LinkedHashMap<>();
+
     /**
      * The bagger
      */
@@ -48,8 +55,9 @@ public class TreeEnsemble
     /**
      * Arrays containing each ID3Coursework classifier and another with their corresponding dataset, a subset of the full dataset
      */
-    ID3Coursework[] classifiers = new ID3Coursework[m_numTrees];
-    Instances[] subsets = new Instances[m_numTrees];
+    protected boolean averageDistribution = false;
+
+    private ID3Coursework baseClassifier = new ID3Coursework();
 
     /**
      * Returns a string describing classifier
@@ -96,12 +104,21 @@ public class TreeEnsemble
 
     public void setNumFeatures(int newNumFeatures) { m_numFeatures = newNumFeatures; }
 
+    public boolean getVoting() {
+        return averageDistribution;
+    }
+
+    public void setVoting(boolean averaging) {
+        this.averageDistribution = averageDistribution;
+    }
+
+
     public int getMaxDepth() { return m_MaxDepth; }
 
     public void setMaxDepth(int value) { m_MaxDepth = value; }
 
+    /*
     public VotingSystem getVotingScheme() { return m_votingScheme; }
-
     public void setVotingScheme(String value) {
         if(value == "m") {
             m_votingScheme = new MajorityVote();
@@ -113,7 +130,7 @@ public class TreeEnsemble
         else {
             System.out.println("Voting scheme option not found: " + value + ". Set to majority vote by default");
         }
-    }
+    }*/
 
     /*
     GET AND SET OPTIONS
@@ -136,9 +153,6 @@ public class TreeEnsemble
 
         result.add("-N");
         result.add("" + getSampleSize());
-
-        result.add("-V");
-        result.add("" + getVotingScheme());
 
         if (getMaxDepth() > 0) {
             result.add("-depth");
@@ -225,6 +239,13 @@ public class TreeEnsemble
         Utils.checkForRemainingOptions(options);
     }
 
+    private Remove getFilter(int[] att){
+        Remove attributeGetter = new Remove();
+        attributeGetter.setInvertSelection(true);
+        attributeGetter.setAttributeIndicesArray(att);
+        return attributeGetter;
+    }
+
     @Override
     public void buildClassifier(Instances data) throws Exception {
         //use majority voting to find best attribute to branch on
@@ -233,7 +254,7 @@ public class TreeEnsemble
         Random rand = new Random();
         rand.setSeed(m_randomSeed);
         //calculate number of attributes in sample
-        int numAttributes = (int) ((data.numAttributes()-1) * m_sampleSize);
+        /*int numAttributes = (int) ((data.numAttributes()) * m_sampleSize);
         //create sample datasets
         for(int i=0; i < m_numTrees; i++) {
             //System.out.println("NEW TREE");
@@ -276,94 +297,90 @@ public class TreeEnsemble
                     options[1] = "y";
                     break;
             }
-            //System.out.println(Arrays.toString(options));
             classifiers[i].setOptions(options);
             //---set options here---//
             classifiers[i].buildClassifier(subsets[i]);
+        }
+         */
+        for (int i = 0; i < m_numTrees; i++) {
+            RandomSubset attIndices = new RandomSubset();
+            attIndices.setNumAttributes(m_sampleSize);
+            attIndices.setSeed(m_randomSeed + i);
+            attIndices.setInputFormat(data);
+            Instances inst = attIndices.process(data);
+            ID3Coursework id3 = new ID3Coursework();
+            id3 = baseClassifier;
+            //create random options for tree
+            String[] options = new String[2];
+            options[0] = "-S";
+            int randomChoice = rand.nextInt(4);
+            switch(randomChoice) {
+                case 0:
+                    options[1] = "i";
+                    break;
+                case 1:
+                    options[1] = "g";
+                    break;
+                case 2:
+                    options[1] = "c";
+                    break;
+                case 3:
+                    options[1] = "y";
+                    break;
+            }
+            id3.setOptions(options);
+            id3.buildClassifier(inst);
+            attributesUsed.put(id3, attIndices);
         }
     }
 
     @Override
     public double classifyInstance(Instance instance) throws Exception {
         //use chosen voting scheme to classify instance
-        return m_votingScheme.countVotes(this, instance);
+        return argMax(distributionForInstance(instance), new Random());
     }
+
 
     @Override
     public double[] distributionForInstance(Instance instance) throws Exception {
-        //poll classifiers for votes
-        HashMap<Double, Integer> votes = pollClassifiers(instance);
-        //find proportion of votes for each class
-        Iterator it = votes.entrySet().iterator();
-        //initialise array to store distributions and counter to keep track of current index in array
-        double[] distributions = new double[votes.size()];
-        int index = 0;
-        while(it.hasNext()) {
-            Map.Entry<Double, Integer> entry = (Map.Entry<Double, Integer>) it.next();
-            distributions[index] = (double)entry.getValue() / m_numTrees;
-            index++;
-        }
-        return distributions;
-    }
-
-    /*
-    NEW METHOD TO PREVENT REUSING CODE FOR CLASSIFYINSTANCE AND DISTRIBUTIONFORINSTANCE
-    Takes an instance as an argument and polls the classifiers to classify it, returning the votes as a HashMap
-     */
-    protected HashMap<Double, Integer> pollClassifiers(Instance ins) throws Exception {
-        HashMap<Double, Integer> votes = new HashMap<Double, Integer>();
-        //poll classifiers for votes
-        for(int i=0; i<classifiers.length; i++) {
-            double vote = classifiers[i].classifyInstance(ins);
-            if(votes.get(vote) == null) {
-                votes.put(vote, 1);
+        // Implement distributionForInstance so that it returns the proportion of votes for
+        // each class.
+        double[] distribution = new double[instance.numClasses()];
+        attributesUsed.forEach((id3, attributes) -> {
+            try {
+//                Remove attributeGetter = getFilter(attributes);
+//                attributeGetter.setInputFormat(instance.dataset());
+//                attributeGetter.input(instance);
+//                Instance inst = attributeGetter.output();
+                attributes.setInputFormat(instance.dataset());
+                attributes.input(instance);
+                Instance inst = attributes.output();
+                if (averageDistribution){
+                    double[] dist = id3.distributionForInstance(inst);
+                    IntStream.range(0, dist.length).forEach(i -> distribution[i] += dist[i]);
+                }
+                else{
+                    distribution[(int) id3.classifyInstance(inst)]++;
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-            else {
-                int oldValue = votes.get(vote);
-                votes.replace(vote, oldValue+1);
-            }
-        }
-        return votes;
-    }
-
-    /*
-    ENSEMBLE VOTING METHODS
-    these methods will be dynamically interchanged depending on how the user configures the classifier
-    they are all different ways of counting the classifier's poll
-     */
-    /*
-    private double majorityVote(HashMap<Double, Integer> votes) {
-        //select class with most votes
-        double mostVoted = 0;
-        Iterator it = votes.entrySet().iterator();
-        while (it.hasNext()) {
-            Map.Entry<Double, Integer> entry = (Map.Entry<Double, Integer>) it.next();
-            if (entry.getValue() > mostVoted) {
-                mostVoted = entry.getKey();
-            }
-        }
-        /*
-        System.out.println("Predicting instance");
-        votes.entrySet().forEach(entry -> {
-            System.out.println(entry.getKey() + " " + entry.getValue());
         });
-        return mostVoted;
-    } */
+        IntStream.range(0, distribution.length).forEach(i -> distribution[i] /= m_numTrees);
+        return distribution;
+    }
+
 
     public static void main(String[] args) throws Exception{
         //load in dataset
-        Instances data = WekaTools.loadClassificationData("src/main/java/ml_6002b_coursework/test_data/meningitis.arff");
+        Instances data = WekaTools.loadClassificationData("src/main/java/ml_6002b_coursework/test_data/optdigits.arff");
+        Instances[] split = WekaTools.splitData(data, 0.7);
         TreeEnsemble c = new TreeEnsemble();
-        c.buildClassifier(data);
+        c.buildClassifier(split[0]);
         System.out.println("Ensemble successfully built on data");
         //set options
-        String[] options = new String[2];
-        options[0] = "-V";
-        //uncomment this to use average distribution voting
-        //options[1] = "d";
-        options[1] = "m";
-        c.setOptions(options);
-        double acc = WekaTools.accuracy(c, data);
+        c.setVoting(true);
+        double acc = WekaTools.accuracy(c, split[1]);
         System.out.println("Test accuracy: " + acc);
         Enumeration insenum = data.enumerateInstances();
         for(int i=0; i<5; i++) {

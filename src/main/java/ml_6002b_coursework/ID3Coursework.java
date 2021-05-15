@@ -36,6 +36,8 @@ import weka.core.TechnicalInformation.Type;
 import javax.rmi.CORBA.Util;
 import java.util.Arrays;
 import java.util.Enumeration;
+import java.util.Map;
+import java.util.Random;
 
 import static ml_6002b_coursework.WekaTools.loadClassificationData;
 import static ml_6002b_coursework.WekaTools.splitData;
@@ -93,6 +95,11 @@ public class ID3Coursework
   /** Attribute used for splitting. */
   private Attribute m_Attribute;
 
+  /**
+   * random value used for splitting numeric attributes.
+   */
+  private double randomSplitValue;
+
   /** Class value if node is leaf. */
   private double m_ClassValue;
 
@@ -136,6 +143,21 @@ public class ID3Coursework
     result.setValue(Field.PAGES, "81-106");
     
     return result;
+  }
+
+  private int branch(Instance instance){
+    int temp;
+    if(m_Attribute.isNumeric()) {
+      if(instance.value(m_Attribute) < randomSplitValue) {
+        temp = 0;
+      } else {
+        temp = 1;
+      }
+    }
+    else {
+      temp = (int)instance.value(m_Attribute);
+    }
+    return temp;
   }
 
   /**
@@ -240,19 +262,23 @@ public class ID3Coursework
    */
   private void makeTree(Instances data) throws Exception {
 
+    int numInstances = data.numInstances();
+    int numClasses = data.numClasses();
+    Attribute classAttribute = data.classAttribute();
     // Check if no instances have reached this node.
-    if (data.numInstances() == 0) {
+    if (numInstances == 0) {
+      Random random= new Random();
       m_Attribute = null;
       m_ClassValue = Utils.missingValue();
-      m_Distribution = new double[data.numClasses()];
+      m_Distribution = new double[numClasses];
       return;
     }
-    else if (data.numInstances() == 1 || data.classAttribute().numValues() == 1) {
+    else if (numInstances == 1 || classAttribute.numValues() == 1) {
       m_Attribute = null;
       m_ClassValue = data.get(0).classValue();
-      m_Distribution = new double[data.numClasses()];
-      m_Distribution[(int) m_ClassValue] = data.numInstances();
-      m_ClassAttribute = data.classAttribute();
+      m_Distribution = new double[numClasses];
+      m_Distribution[(int) m_ClassValue] = numInstances;
+      m_ClassAttribute = classAttribute;
       return;
     }
 
@@ -263,46 +289,35 @@ public class ID3Coursework
       Attribute att = (Attribute) attEnum.nextElement();
       infoGains[att.index()] = attSplit.computeAttributeQuality(data, att);
     }
-    //System.out.println("using " + attSplit);
-    /*
-    if (Double.isNaN(infoGains[0]) || Double.isNaN(infoGains[1]) || Double.isNaN(infoGains[2])) {
-      System.exit(0);
-    } */
-    for(int i=0; i<infoGains.length; i++) {
-      if(Double.isNaN(infoGains[i])) {
-        System.exit(0);
-      }
-    }
-    //set largest attribute based on which has the most information gain
-    //System.out.println(Arrays.toString(infoGains));
     m_Attribute = data.attribute(Utils.maxIndex(infoGains));
-    //System.out.println(m_Attribute);
+
     // Make leaf if information gain is zero.
     // Otherwise create successors.
+    // stop when there is only 1 class or no more attribute to split
     if (Utils.eq(infoGains[m_Attribute.index()], 0)) {
-      //System.out.println("create leaf for " + m_Attribute.name());
       m_Attribute = null;
-      m_Distribution = new double[data.numClasses()];
-      //System.out.println(data.numInstances());
+      m_Distribution = new double[numClasses];
       Enumeration instEnum = data.enumerateInstances();
       while (instEnum.hasMoreElements()) {
         Instance inst = (Instance) instEnum.nextElement();
-        //System.out.println(inst.classValue());
         m_Distribution[(int) inst.classValue()]++;
       }
       Utils.normalize(m_Distribution);
       m_ClassValue = Utils.maxIndex(m_Distribution);
-      m_ClassAttribute = data.classAttribute();
+      m_ClassAttribute = classAttribute;
     } else {
-      //splitdata is an array of Instances objects for each attribute value then goes and adds each Instance
-      //in the dataset to whichever Instances it belongs to
-      //this splits the data and then each successor will make a tree from it
-      //System.out.println("creating successors for " + m_Attribute.name());
-      Instances[] splitData = attSplit.splitData(data, m_Attribute);
-      //System.out.println("num instances");
-      //System.out.println(data.numInstances());
-      m_Successors = new ID3Coursework[m_Attribute.numValues()];
-      for (int j = 0; j < m_Attribute.numValues(); j++) {
+      Instances[] splitData = new Instances[0];
+      if (m_Attribute.isNominal())
+        splitData = attSplit.splitData(data, m_Attribute);
+      else if (m_Attribute.isNumeric()){
+        Map.Entry<Instances[], Double> temp = attSplit.splitDataOnNumeric(data, m_Attribute);
+        splitData = temp.getKey();
+        randomSplitValue = temp.getValue();
+      }
+//            splitData = attSplit.splitData(data, m_Attribute);
+      int numValues = m_Attribute.isNominal() ? m_Attribute.numValues() : splitData.length;
+      m_Successors = new ID3Coursework[numValues];
+      for (int j = 0; j < numValues; j++) {
         m_Successors[j] = new ID3Coursework();
         m_Successors[j].setOptions(this.getOptions());
         m_Successors[j].makeTree(splitData[j]);
@@ -322,13 +337,13 @@ public class ID3Coursework
 
     if (instance.hasMissingValue()) {
       throw new NoSupportForMissingValuesException("Id3: no missing values, "
-                                                   + "please.");
+              + "please.");
     }
     if (m_Attribute == null) {
       return m_ClassValue;
     } else {
-      return m_Successors[(int) instance.value(m_Attribute)].
-        classifyInstance(instance);
+      return m_Successors[branch(instance)].
+              classifyInstance(instance);
     }
   }
 
@@ -348,8 +363,9 @@ public class ID3Coursework
     }
     if (m_Attribute == null) {
       return m_Distribution;
-    } else { 
-      return m_Successors[(int) instance.value(m_Attribute)].
+    } else {
+      int temp = branch(instance);
+      return m_Successors[temp].
         distributionForInstance(instance);
     }
   }
@@ -565,7 +581,7 @@ public class ID3Coursework
     Instances chinatownTest = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Chinatown_TEST.arff");
 
     Instances optdigits = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/optdigits.arff");
-    Instances[] trainTest = resampleInstances(optdigits, 0, 0.7);
+    Instances[] trainTest = splitData(optdigits, 0.7);
     Instances optdigitsTrain = trainTest[0];
     Instances optdigitsTest = trainTest[1];
 

@@ -5,6 +5,7 @@ import weka.core.Instance;
 import java.util.*;
 
 public class AverageDistributionVote implements VotingSystem {
+
     @Override
     public double countVotes(TreeEnsemble c, Instance instance) throws Exception {
         //get array of class names to refer to
@@ -16,8 +17,8 @@ public class AverageDistributionVote implements VotingSystem {
         double[][] distributions = new double[c.m_numTrees][instance.numClasses()];
         //populate distributions
         for(int i=0; i<c.m_numTrees; i++) {
-            double[] currentDist = c.classifiers[i].distributionForInstance(instance);
-            distributions[i] = currentDist;
+            //double[] currentDist = c.classifiers[i].distributionForInstance(instance);
+            //distributions[i] = currentDist;
         }
         //find sum of all distributions for each class
         double[] distributionSum = new double[instance.numClasses()];
