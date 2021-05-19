@@ -38,7 +38,7 @@ public class GiniAttributeSplitMeasure implements AttributeSplitMeasure {
     @Override
     public double computeAttributeQuality(Instances data, Attribute att) throws Exception {
         // Gini at root node
-        double gini = calculateGini(data);
+        double gini = calculateImpurity(data);
 
         Instances[] splitData;
         int numValues;
@@ -56,23 +56,24 @@ public class GiniAttributeSplitMeasure implements AttributeSplitMeasure {
             if (splitData[j].numInstances() > 0) {
                 gini -= ((double)splitData[j].numInstances() /
                         (double)data.numInstances()) *
-                        calculateGini(splitData[j]);
+                        calculateImpurity(splitData[j]);
             }
         }
         return gini;
     }
 
-    private double calculateGini(Instances data) {
+    private double calculateImpurity(Instances data) {
         double [] classCounts = new double[data.numClasses()];
         double impurity = 1.0;
         double numInstances = data.numInstances();
 
+        //populate array of num instances in each class
         Enumeration instEnum = data.enumerateInstances();
         while (instEnum.hasMoreElements()) {
             Instance inst = (Instance) instEnum.nextElement();
             classCounts[(int)inst.classValue()]++;
         }
-
+        //iterate through classCounts and add to total impurity
         for (double classCount : classCounts) {
             if (classCount > 0) {
                 double p = classCount / numInstances;

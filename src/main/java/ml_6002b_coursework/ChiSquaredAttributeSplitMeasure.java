@@ -15,33 +15,27 @@ public class ChiSquaredAttributeSplitMeasure implements AttributeSplitMeasure {
     public static void main(String[] args) throws Exception{
         //load in dataset
         Instances data = WekaTools.loadClassificationData("src/main/java/ml_6002b_coursework/test_data/meningitis.arff");
-        //set target attribute
-        data.setClassIndex(data.numAttributes()-1);
-        //compute attribute quality for each attribute on base dataset and print to usesr
-        Enumeration attEnum = data.enumerateAttributes();
         double attQuality;
+        //no yates
+        Enumeration attEnum = data.enumerateAttributes();
         while (attEnum.hasMoreElements()) {
             Attribute att = (Attribute) attEnum.nextElement();
             attQuality = new ChiSquaredAttributeSplitMeasure().computeAttributeQuality(data, att);
             System.out.println("Measure Chi-squared statistic for Attribute " + att.name() + " splitting diagnosis: " + attQuality);
         }
-        /*
-        try {
-            ID3Coursework c = new ID3Coursework();
-            String[] options = {"-S", "c"};
-            c.setOptions(options);
-            c.buildClassifier(data);
+        //yates
+        attEnum = data.enumerateAttributes();
+        while (attEnum.hasMoreElements()) {
+            Attribute att = (Attribute) attEnum.nextElement();
+            attQuality = new ChiSquaredAttributeSplitMeasure(true).computeAttributeQuality(data, att);
+            System.out.println("Measure Chi-squared yates statistic for Attribute " + att.name() + " splitting diagnosis: " + attQuality);
         }
-        catch(Exception e) {
-            System.out.println("Exception: " + e);
-        }*/
     }
 
 
     boolean yates = false;
 
-    public ChiSquaredAttributeSplitMeasure() {
-    }
+    public ChiSquaredAttributeSplitMeasure() { }
 
     public ChiSquaredAttributeSplitMeasure(boolean yates) {
         this.yates = yates;
@@ -51,19 +45,19 @@ public class ChiSquaredAttributeSplitMeasure implements AttributeSplitMeasure {
         return yates;
     }
 
-    /**
-     * Computes Chi Squared statistic for an attribute.
-     *
-     * @param data the data for which chi is to be computed
-     * @param att  the attribute
-     * @return the chi for the given attribute and data
-     */
     @Override
     public double computeAttributeQuality(Instances data, Attribute att) {
         if (data.numInstances() == 0)
             return 0;
         Instances[] splitData = splitData(data, att);
-        int numValues = att.isNominal() ? att.numValues() : splitData.length;
+        //use different number of values based on if attribute is nominal
+        int numValues;
+        if(att.isNominal()) {
+            numValues = att.numValues();
+        } else {
+            numValues = splitData.length;
+        }
+        //create contingency table for attribute
         double[][] table = new double[numValues][data.numClasses()];
         for (int i = 0; i < att.numValues(); i++) {
             for (Instance instance : splitData[i]) {
@@ -73,16 +67,6 @@ public class ChiSquaredAttributeSplitMeasure implements AttributeSplitMeasure {
         }
         if(yates) { return  measureChiSquaredYates(table); }
         else { return measureChiSquared(table); }
-
-    }
-
-    @Override
-    public String toString() {
-        if (yates) {
-            return "-Y: Attribute is Chi Squared statistic with Yates correction.";
-        } else {
-            return "-C: Attribute is Chi Squared statistic.";
-        }
 
     }
 }

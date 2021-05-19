@@ -19,146 +19,132 @@ public class AttributeMeasures {
     public static void main(String[] args) throws Exception {
         //load in dataset
         Instances data = WekaTools.loadClassificationData("src/main/java/ml_6002b_coursework/test_data/meningitis.arff");
-        data.setClassIndex(data.numAttributes()-1);
-        Attribute att = data.attribute(0);
-        int[][] table = contingencyTable(data, att);
-        ////////
-        /////////
-        //CHANGE THIS TO USE THE METHODS IN THIS CLASS
-        IGAttributeSplitMeasure ig = new IGAttributeSplitMeasure();
-        double informationGain = ig.computeAttributeQuality(data, att);
-        System.out.println("Measure IG for " + att.name() + ": Splitting diagnosis: "  + informationGain);
-        GiniAttributeSplitMeasure gini = new GiniAttributeSplitMeasure();
-        double ginival = gini.computeAttributeQuality(data, att);
-        System.out.println("Measure Gini for " + att.name() + ": Splitting diagnosis: " + ginival);
-        ChiSquaredAttributeSplitMeasure chi = new ChiSquaredAttributeSplitMeasure();
-        double chiSquared = chi.computeAttributeQuality(data,att);
-        System.out.println("Measure Chi-squared for " + att.name() + ": Splitting diagnosis: " + chiSquared);
-        ChiSquaredAttributeSplitMeasure yate = new ChiSquaredAttributeSplitMeasure(true);
-        double chiSquaredYates = yate.computeAttributeQuality(data,att);
-        System.out.println("Measure Chi-squared with Yates correction for " + att.name() + ": Splitting diagnosis: " + chiSquaredYates);
-        //train test split dataset
-        /*
-        Instances[] trainTestSplit = WekaTools.splitData(data, 0.6);
-        Instances train = trainTestSplit[0];
-        Instances test = trainTestSplit[1];
-        //set target attribute
-        train.setClassIndex(train.numAttributes()-1);
-        test.setClassIndex(train.numAttributes()-1);
+        Attribute att = data.attribute("headache");
+        double[][] headacheTable = new double[][]{{3,2}, {3,4}};
 
-        try {
-            Classifier c = new ID3Coursework();
-            c.buildClassifier(train);
-            int[] pred = WekaTools.classifyInstances(c, test);
-            //System.out.println(Arrays.toString(pred));
-            //System.out.println(Arrays.deepToString(WekaTools.confusionMatrix(pred, WekaTools.getClassValues(test))).replace("], ", "]\n"));
-        }
-        catch(Exception e) {
-            System.out.println("Exception: " + e);
-        }*/
+        System.out.println("Measure IG for " + att.name() + ": Splitting diagnosis: "  + measureInformationGain(headacheTable));
+        System.out.println("Measure Gini for " + att.name() + ": Splitting diagnosis: " + measureGini(headacheTable));
+        System.out.println("Measure Chi-squared for " + att.name() + ": Splitting diagnosis: " + measureChiSquared(headacheTable));
+        System.out.println("Measure Chi-squared with Yates correction for " + att.name() + ": Splitting diagnosis: " + measureChiSquaredYates(headacheTable));
     }
 
-    public static double measureInformationGain(double[][] array){
-        double returnValue = 0, rowSum, total = 0;
-        int numRows = array.length;
-        int numCols = array[0].length;
+    //returns information gain for contingency table
+    public static double measureInformationGain(double[][] split) throws Exception{
+        if (split.length == 0 || split[0].length == 0)
+            return 0;
 
-        for (double[] doubles : array) {
-            rowSum = 0;
-            for (int j = 0; j < numCols; j++) {
-                returnValue = returnValue + (doubles[j] * Math.log(doubles[j]));
-                rowSum += doubles[j];
+        //find entropy of parent node
+        double[] parent = new double[split[0].length];
+        for (double[] attributeValue : split) {
+            for (int j = 0; j < split[0].length; j++) {
+                parent[j] += attributeValue[j];
             }
-            returnValue = returnValue - (rowSum * Math.log(rowSum));
-            total += rowSum;
         }
-        try{
-            return 1-(-returnValue / (total * Math.log(2)));
+        double infoGain = entropy(parent);
+
+        //find entropy of child nodes
+        double attSum = 0;
+        double total = 0;
+        for (double[] attributeValue : split) {
+            double attributeValueCount = Arrays.stream(attributeValue).sum();
+            if (attributeValueCount > 0){
+                total += attributeValueCount * entropy(attributeValue);
+                attSum += attributeValueCount;
+            }
         }
-        catch (Exception e){
-            e.printStackTrace();
-            return 0.0;
-        }
+        infoGain -= total / attSum;
+        return infoGain;
 
     }
 
-
-    public static double measureGini(double[][] array){
-        try{
-            double returnValue = 0, rowSum = 0, total = 0, weighted = 0;
-            int numRows = array.length;
-            int numCols = array[0].length;
-            double[] values = new double[numCols];
-
-            for (double[] doubles : array) {
-                for (int j = 0; j < numCols; j++) {
-                    total += doubles[j];
-                }
+    private static double entropy(double[] split) throws Exception {
+        // adapted from computeEntropy in ID3
+        double entropy = 0;
+        double count = 0;
+        for (double classCount : split) {
+            if (classCount > 0) {
+                entropy -= classCount * Utils.log2(classCount);
+                count += classCount;
             }
-
-
-            for (double[] doubles : array) {
-                returnValue = 0;
-                rowSum = 0;
-                for (int j = 0; j < numCols; j++) {
-                    rowSum += doubles[j];
-                    values[j] = doubles[j];
-                }
-
-                for (double x : values){
-                    //System.out.println(x + " / " + rowSum);
-                    returnValue += Math.pow((x/rowSum),2);
-                    //System.out.println("Return value " + returnValue);
-                }
-
-
-                returnValue = (1 - returnValue);
-                //System.out.println("Calculated impurity for node  " + returnValue);
-                //System.out.println("Calculation  " + returnValue + " * " + "( " + rowSum + " / " + total);
-                weighted+= (returnValue*(rowSum/total));
-                //System.out.println("Current weighted = " + weighted);
-            }
-
-            if (total == 0) {
-                return 0;
-            }
-
-            return weighted;
-
         }
-        catch (Exception e){
-            e.printStackTrace();
-            return 0.0;
+        entropy /= count;
+        return entropy + Utils.log2(count);
+    }
+
+    //returns gini measure for contingency table
+    public static double measureGini(double[][] split) throws Exception{
+        if (split.length == 0 || split[0].length == 0)
+            return 0;
+
+        //find gini of parent node
+        double[] parent = new double[split[0].length];
+        for (double[] attributeValue : split) {
+            for (int j = 0; j < split[0].length; j++) {
+                parent[j] += attributeValue[j];
+            }
         }
+        //add parent gini to total
+        double gini = impurity(parent);
+
+        //find gini for child nodes
+        double count = 0;
+        double sum = 0;
+        for (double[] attributeValue : split) {
+            double attributeValueCount = Arrays.stream(attributeValue).sum();
+            if (attributeValueCount > 0){
+                sum += attributeValueCount * impurity(attributeValue);
+                count += attributeValueCount;
+            }
+        }
+        gini -= sum / count;
+        return gini;
+    }
+
+    private static double impurity(double[] split) throws Exception {
+        double impurity = 0;
+        double count = 0;
+        for (double classCount : split) {
+            if (classCount > 0) {
+                impurity += classCount * classCount;
+                count += classCount;
+            }
+        }
+
+        impurity = 1 - impurity/(count * count);
+        return impurity;
     }
 
     public static double calcChiSquared(double[][] split, boolean yates){
         double chi = 0;
-        double n = 0;
+        double count = 0;
 
         int attributeValues = split.length;
         int classes = split[0].length;
         if (attributeValues <= 1 && classes <= 1 || split[0].length == 0)
             return 0;
 
-        double[] valueTotals = new double [attributeValues];
         double[] classTotals = new double [classes];
+        double[] attTotals = new double [attributeValues];
 
+        //calculate totals for row and column for calculating expected
         for (int row = 0; row < attributeValues; row++) {
             for (int col = 0; col < classes; col++) {
                 double classCount = split[row][col];
-                valueTotals[row] += classCount;
+                attTotals[row] += classCount;
                 classTotals[col] += classCount;
-                n += classCount;
+                count += classCount;
             }
         }
 
+        //traverse table and for each non-empty field
         for (int row = 0; row < attributeValues; row++) {
-            if (valueTotals[row] > 0) {
+            if (attTotals[row] > 0) {
                 for (int col = 0; col < classes; col++) {
                     if (classTotals[col] > 0) {
-                        double expected = valueTotals[row] * (classTotals[col] / n);
+                        //calculate expected value for field, find difference and add to total chi
+                        double expected = attTotals[row] * (classTotals[col] / count);
                         double diff = Math.abs(split[row][col] - expected);
+                        //if using yates apply yates correction
                         if(yates) {
                             diff = max(diff - 0.5, 0);
                         }
@@ -178,18 +164,14 @@ public class AttributeMeasures {
         return calcChiSquared(array, true);
     }
 
-    public static int[][] contingencyTable(Instances data, Attribute att) {
+    public static double[][] contingencyTable(Instances data, Attribute att) {
         //System.out.println(att.numValues());
         //System.out.println("classes " + data.numClasses());
-        int[][] table = new int[att.numValues()+1][data.numClasses()+1];
+        double[][] table = new double[att.numValues()+1][data.numClasses()+1];
         //iterate through instances and add to class counts based on attribute att
         for(Instance ins:data) {
             table[(int) ins.value(att)][(int)ins.classValue()]++;
         }
-        //find totals
-        //total for each class
-        //table[att.numValues()][0] = table[0][0] + table[1][0];
-        //table[att.numValues()][1] = table[0][1] + table[1][1];
         for(int i=0; i<data.numClasses(); i++) {
             for(int j=0; j<att.numValues(); j++) {
                 table[att.numValues()][i] = table[att.numValues()][i] + table[j][i];
@@ -217,11 +199,6 @@ public class AttributeMeasures {
                 expectedTable[i][j] = contingencyTable[i][contingencyTable[i].length] * globalProbs[j];
             }
         }
-        /*
-        expectedTable[0][0] = contingencyTable[0][2] * globalProbNegative;
-        expectedTable[1][0] = contingencyTable[1][2] * globalProbNegative;
-        expectedTable[0][1] = contingencyTable[0][2] * globalProbPositive;
-        expectedTable[1][1] = contingencyTable[1][2] * globalProbPositive; */
         return expectedTable;
     }
 }

@@ -21,8 +21,7 @@ public class TreeEnsemble
      */
     protected int m_numTrees = 50;
     /**
-     * Number of features to consider in random feature selection.
-     * If less than 1 will use int(logM+1) )
+     * Number of features
      */
     protected int m_numFeatures = 0;
     /**
@@ -35,29 +34,16 @@ public class TreeEnsemble
      */
     protected int m_randomSeed = 2;
 
-    private final LinkedHashMap<ID3Coursework, RandomSubset> attributesUsed = new LinkedHashMap<>();
-
-    /**
-     * The bagger
-     */
-    //protected Bagging m_bagger = null;
+    private final LinkedHashMap<ID3Coursework, RandomSubset> usedAttributes = new LinkedHashMap<>();
 
     /**
      * The maximum depth of the trees (0 = unlimited)
      */
     protected int m_MaxDepth = 0;
 
-    /**
-     * The scheme used by the ensemble to vote on classifying an instance, majority vote by default
-     */
-    protected VotingSystem m_votingScheme = new MajorityVote();
-
-    /**
-     * Arrays containing each ID3Coursework classifier and another with their corresponding dataset, a subset of the full dataset
-     */
     protected boolean averageDistribution = false;
 
-    private ID3Coursework baseClassifier = new ID3Coursework();
+    private ID3Coursework classifier = new ID3Coursework();
 
     /**
      * Returns a string describing classifier
@@ -108,7 +94,7 @@ public class TreeEnsemble
         return averageDistribution;
     }
 
-    public void setVoting(boolean averaging) {
+    public void setVoting(boolean averageDistribution) {
         this.averageDistribution = averageDistribution;
     }
 
@@ -116,21 +102,6 @@ public class TreeEnsemble
     public int getMaxDepth() { return m_MaxDepth; }
 
     public void setMaxDepth(int value) { m_MaxDepth = value; }
-
-    /*
-    public VotingSystem getVotingScheme() { return m_votingScheme; }
-    public void setVotingScheme(String value) {
-        if(value == "m") {
-            m_votingScheme = new MajorityVote();
-        }
-        else if(value == "d") {
-            m_votingScheme = new AverageDistributionVote();
-        }
-        //default case if no valid one specified
-        else {
-            System.out.println("Voting scheme option not found: " + value + ". Set to majority vote by default");
-        }
-    }*/
 
     /*
     GET AND SET OPTIONS
@@ -159,8 +130,6 @@ public class TreeEnsemble
             result.add("" + getMaxDepth());
         }
 
-        //result.add("-num-slots");
-        //result.add("" + getNumExecutionSlots());
 
         options = super.getOptions();
         for (i = 0; i < options.length; i++)
@@ -212,44 +181,20 @@ public class TreeEnsemble
             System.out.println(e);
         }
 
-        //set voting scheme
-        tmpStr = Utils.getOption('V', options);
-        if(tmpStr.equals("m")) {
-            m_votingScheme = new MajorityVote();
-        }
-        else if(tmpStr.equals("d")) {
-            m_votingScheme = new AverageDistributionVote();
-        }
-        //default case if no valid one specified
-        else {
-            System.out.println("Voting scheme option not found: " + tmpStr + ". Set to majority vote by default");
-            m_votingScheme = new MajorityVote();
-        }
-
-        /*
-        tmpStr = Utils.getOption("num-slots", options);
-        if (tmpStr.length() > 0) {
-            setNumExecutionSlots(Integer.parseInt(tmpStr));
-        } else {
-            setNumExecutionSlots(1);
-        }*/
-
         super.setOptions(options);
 
         Utils.checkForRemainingOptions(options);
     }
 
     private Remove getFilter(int[] att){
-        Remove attributeGetter = new Remove();
-        attributeGetter.setInvertSelection(true);
-        attributeGetter.setAttributeIndicesArray(att);
-        return attributeGetter;
+        Remove attGett = new Remove();
+        attGett.setInvertSelection(true);
+        attGett.setAttributeIndicesArray(att);
+        return attGett;
     }
 
     @Override
     public void buildClassifier(Instances data) throws Exception {
-        //use majority voting to find best attribute to branch on
-        //now ATTRIBUTE TO BRANCH ON IS SELECTED, copy code from ID3 coursework to create tree maybe?
         //initialise Random and set seed to reproduce results
         Random rand = new Random();
         rand.setSeed(m_randomSeed);
@@ -304,12 +249,12 @@ public class TreeEnsemble
          */
         for (int i = 0; i < m_numTrees; i++) {
             RandomSubset attIndices = new RandomSubset();
-            attIndices.setNumAttributes(m_sampleSize);
             attIndices.setSeed(m_randomSeed + i);
+            attIndices.setNumAttributes(m_sampleSize);
             attIndices.setInputFormat(data);
-            Instances inst = attIndices.process(data);
-            ID3Coursework id3 = new ID3Coursework();
-            id3 = baseClassifier;
+            Instances ins = attIndices.process(data);
+            ID3Coursework c;
+            c = classifier;
             //create random options for tree
             String[] options = new String[2];
             options[0] = "-S";
@@ -328,9 +273,9 @@ public class TreeEnsemble
                     options[1] = "y";
                     break;
             }
-            id3.setOptions(options);
-            id3.buildClassifier(inst);
-            attributesUsed.put(id3, attIndices);
+            c.setOptions(options);
+            c.buildClassifier(ins);
+            usedAttributes.put(c, attIndices);
         }
     }
 
@@ -343,24 +288,18 @@ public class TreeEnsemble
 
     @Override
     public double[] distributionForInstance(Instance instance) throws Exception {
-        // Implement distributionForInstance so that it returns the proportion of votes for
-        // each class.
         double[] distribution = new double[instance.numClasses()];
-        attributesUsed.forEach((id3, attributes) -> {
+        usedAttributes.forEach((c, attributes) -> {
             try {
-//                Remove attributeGetter = getFilter(attributes);
-//                attributeGetter.setInputFormat(instance.dataset());
-//                attributeGetter.input(instance);
-//                Instance inst = attributeGetter.output();
                 attributes.setInputFormat(instance.dataset());
                 attributes.input(instance);
-                Instance inst = attributes.output();
+                Instance ins = attributes.output();
                 if (averageDistribution){
-                    double[] dist = id3.distributionForInstance(inst);
-                    IntStream.range(0, dist.length).forEach(i -> distribution[i] += dist[i]);
+                    double[] distr = c.distributionForInstance(ins);
+                    IntStream.range(0, distr.length).forEach(i -> distribution[i] += distr[i]);
                 }
                 else{
-                    distribution[(int) id3.classifyInstance(inst)]++;
+                    distribution[(int) c.classifyInstance(ins)]++;
                 }
             } catch (Exception e) {
                 e.printStackTrace();
@@ -380,8 +319,10 @@ public class TreeEnsemble
         System.out.println("Ensemble successfully built on data");
         //set options
         c.setVoting(true);
+        //calculate accuracy
         double acc = WekaTools.accuracy(c, split[1]);
         System.out.println("Test accuracy: " + acc);
+        //print predictions for first 5 instances
         Enumeration insenum = split[1].enumerateInstances();
         for(int i=0; i<5; i++) {
             Instance ins = (Instance) insenum.nextElement();

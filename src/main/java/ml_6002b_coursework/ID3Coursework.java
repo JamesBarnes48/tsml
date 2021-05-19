@@ -145,15 +145,18 @@ public class ID3Coursework
     return result;
   }
 
+  //return attribute value based on if attribute is numeric or not
   private int branch(Instance instance){
     int temp;
     if(m_Attribute.isNumeric()) {
+      //return binned value based on binary split
       if(instance.value(m_Attribute) < randomSplitValue) {
         temp = 0;
       } else {
         temp = 1;
       }
     }
+    //return discrete value of attribute
     else {
       temp = (int)instance.value(m_Attribute);
     }
@@ -264,21 +267,21 @@ public class ID3Coursework
 
     int numInstances = data.numInstances();
     int numClasses = data.numClasses();
-    Attribute classAttribute = data.classAttribute();
+    Attribute classAtt = data.classAttribute();
     // Check if no instances have reached this node.
     if (numInstances == 0) {
-      Random random= new Random();
+      Random rand= new Random();
       m_Attribute = null;
       m_ClassValue = Utils.missingValue();
       m_Distribution = new double[numClasses];
       return;
     }
-    else if (numInstances == 1 || classAttribute.numValues() == 1) {
+    else if (numInstances == 1 || classAtt.numValues() == 1) {
       m_Attribute = null;
       m_ClassValue = data.get(0).classValue();
       m_Distribution = new double[numClasses];
       m_Distribution[(int) m_ClassValue] = numInstances;
-      m_ClassAttribute = classAttribute;
+      m_ClassAttribute = classAtt;
       return;
     }
 
@@ -291,31 +294,36 @@ public class ID3Coursework
     }
     m_Attribute = data.attribute(Utils.maxIndex(infoGains));
 
-    // Make leaf if information gain is zero.
-    // Otherwise create successors.
-    // stop when there is only 1 class or no more attribute to split
+    // Create leaf if info gain is zero.
+    // stop when there are no more attributes to split / there is only one class
     if (Utils.eq(infoGains[m_Attribute.index()], 0)) {
       m_Attribute = null;
       m_Distribution = new double[numClasses];
-      Enumeration instEnum = data.enumerateInstances();
-      while (instEnum.hasMoreElements()) {
-        Instance inst = (Instance) instEnum.nextElement();
-        m_Distribution[(int) inst.classValue()]++;
+      Enumeration insEnum = data.enumerateInstances();
+      while (insEnum.hasMoreElements()) {
+        Instance ins = (Instance) insEnum.nextElement();
+        m_Distribution[(int) ins.classValue()]++;
       }
       Utils.normalize(m_Distribution);
       m_ClassValue = Utils.maxIndex(m_Distribution);
-      m_ClassAttribute = classAttribute;
-    } else {
+      m_ClassAttribute = classAtt;
+    }
+    //create successors if info gain is not zero
+    else {
       Instances[] splitData = new Instances[0];
       if (m_Attribute.isNominal())
         splitData = attSplit.splitData(data, m_Attribute);
       else if (m_Attribute.isNumeric()){
-        Map.Entry<Instances[], Double> temp = attSplit.splitDataOnNumeric(data, m_Attribute);
-        splitData = temp.getKey();
-        randomSplitValue = temp.getValue();
+        Map.Entry<Instances[], Double> splitMap = attSplit.splitDataOnNumeric(data, m_Attribute);
+        splitData = splitMap.getKey();
+        randomSplitValue = splitMap.getValue();
       }
-//            splitData = attSplit.splitData(data, m_Attribute);
-      int numValues = m_Attribute.isNominal() ? m_Attribute.numValues() : splitData.length;
+      int numValues;
+      if(m_Attribute.isNominal()) {
+        numValues = m_Attribute.numValues();
+      } else {
+        numValues = splitData.length;
+      }
       m_Successors = new ID3Coursework[numValues];
       for (int j = 0; j < numValues; j++) {
         m_Successors[j] = new ID3Coursework();
@@ -358,8 +366,7 @@ public class ID3Coursework
     throws NoSupportForMissingValuesException {
 
     if (instance.hasMissingValue()) {
-      throw new NoSupportForMissingValuesException("Id3: no missing values, "
-                                                   + "please.");
+      throw new NoSupportForMissingValuesException("Please ensure there are no missing values");
     }
     if (m_Attribute == null) {
       return m_Distribution;
@@ -378,7 +385,7 @@ public class ID3Coursework
   public String toString() {
 
     if ((m_Distribution == null) && (m_Successors == null)) {
-      return "Id3: No model built yet.";
+      return "Tree does not exist";
     }
     return "Id3\n\n" + toString(0);
   }
@@ -519,15 +526,6 @@ public class ID3Coursework
 
     return result.toString();
   }
-  
-  /**
-   * Returns the revision string.
-   * 
-   * @return		the revision
-   */
-  public String getRevision() {
-    return RevisionUtils.extract("$Revision: 6404 $");
-  }
 
   public String getAtt() {
     return attSplit.getClass().getSimpleName();
@@ -540,43 +538,7 @@ public class ID3Coursework
    */
   ////////////////MAIN METHOD
   public static void main(String[] args) throws Exception {
-    //load in dataset
-    /*
-    Instances data = WekaTools.loadClassificationData("src/main/java/ml_6002b_coursework/test_data/optdigits.arff");
-    //set target attribute
-    data.setClassIndex(data.numAttributes() - 1);
-    System.out.println("optdigits.arff before split: ");
-    Enumeration insenum = data.enumerateInstances();
-    for(int i=0; i<5; i++) {
-      Instance ins = (Instance) insenum.nextElement();
-      System.out.println(ins.toString());
-    }
-    AttributeSplitMeasure asm = new GiniAttributeSplitMeasure();
-    //iterate over all attributes in dataset and convert to nominal
-    Enumeration attEnum = data.enumerateAttributes();
-    while (attEnum.hasMoreElements()) {
-      Attribute att = (Attribute) attEnum.nextElement();
-      Instances[] splitdata = asm.splitDataOnNumeric(data, att).getKey();
-    }
-    System.out.println("optdigits.arff after split: ");
-    insenum = data.enumerateInstances();
-    for(int i=0; i<5; i++) {
-      Instance ins = (Instance) insenum.nextElement();
-      System.out.println(ins.toString());
-    }
-    // THROWS ERROR FOR OPTDIGITS.ARFF DATA - TREE DESIGNED TO BE USED FOR BINARY CLASSES
-    //build classifiers for each criteria and output
-    ID3Coursework c = new ID3Coursework();
-    //initialise options
-    String[] options = new String[2];
-    options[0] = "-S";
-    //train test split
-    Instances[] trainTestSplit = WekaTools.splitData(data, 0.6);
-    Instances train = trainTestSplit[0];
-    Instances test = trainTestSplit[1];
-    c.buildClassifier(train);
-    options[1] = "g";
-    c.setOptions(options); */
+
     Instances chinatownTrain = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Chinatown_TRAIN.arff");
     Instances chinatownTest = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Chinatown_TEST.arff");
 
@@ -592,15 +554,15 @@ public class ID3Coursework
 
       ID3Coursework id3 = new ID3Coursework();
 
+      //OPTDIGITS
+      //use infogain
       //initialise options
       String[] options = new String[2];
       options[0] = "-S";
-      //use infogain
       options[1] = "i";
       id3.setOptions(options);
       id3.buildClassifier(optdigitsTrain);
       //id3.buildClassifier(chinatownTrain);
-      System.out.println(id3.getAtt());
       System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
@@ -611,10 +573,10 @@ public class ID3Coursework
       id3.setOptions(options);
       //id3.buildClassifier(chinatownTrain);
       id3.buildClassifier(optdigitsTrain);
-      System.out.println(id3.getAtt());
       System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
+      //use chisquared
       options = new String[2];
       options[0] = "-S";
       options[1] = "c";
@@ -623,20 +585,51 @@ public class ID3Coursework
       System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
+      //use chisquared yates
       options = new String[2];
       options[0] = "-S";
       options[1] = "y";
       id3.setOptions(options);
       id3.buildClassifier(optdigitsTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAtt() + " with Yates on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
-      /*ID3Coursework yatesID3 = new ID3Coursework(new ChiSquaredAttributeSplitMeasure(true));
-      options[0] = "-Y";
-      yatesID3.setOptions(options);
-      yatesID3.buildClassifier(optdigits);
-      System.out.println("Id3 using measure " + yatesID3.getAtt() + " yates on JW Problem has test accuracy = "
-              + WekaTools.accuracy(yatesID3, optdigits));*/
+      //CHINATOWN
+      //use infogain
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "i";
+      id3.setOptions(options);
+      id3.buildClassifier(chinatownTrain);
+      System.out.println("Id3 using measure " + id3.getAtt() + " on Chinatown Problem has test accuracy = "
+              + WekaTools.accuracy(id3, chinatownTest));
+
+      //use gini
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "g";
+      id3.setOptions(options);
+      id3.buildClassifier(chinatownTrain);
+      System.out.println("Id3 using measure " + id3.getAtt() + " on Chinatown Problem has test accuracy = "
+              + WekaTools.accuracy(id3, chinatownTest));
+
+      //use chisquared
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "c";
+      id3.setOptions(options);
+      id3.buildClassifier(chinatownTrain);
+      System.out.println("Id3 using measure " + id3.getAtt() + " on Chinatown Problem has test accuracy = "
+              + WekaTools.accuracy(id3, chinatownTest));
+
+      //use chisquared yates
+      options = new String[2];
+      options[0] = "-S";
+      options[1] = "y";
+      id3.setOptions(options);
+      id3.buildClassifier(chinatownTrain);
+      System.out.println("Id3 using measure " + id3.getAtt() + " with Yates on Chinatown Problem has test accuracy = "
+              + WekaTools.accuracy(id3, chinatownTest));
 
     }
     catch (Exception e){

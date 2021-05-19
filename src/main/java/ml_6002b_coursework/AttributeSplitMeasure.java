@@ -23,6 +23,7 @@ public interface AttributeSplitMeasure {
      * @return the sets of instances produced by the split
      */
      default Instances[] splitData(Instances data, Attribute att) {
+         //if numeric split on numeric instead
          if(att.isNumeric()) {
              return splitDataOnNumeric(data,att).getKey();
          }
@@ -42,30 +43,31 @@ public interface AttributeSplitMeasure {
     }
 
     default Map.Entry<Instances[], Double> splitDataOnNumeric(Instances data, Attribute att){
-        //System.out.println("Att num values: " + att.numValues());
+         //array of instances used to hold the two parts of the split
         Instances[] splitData = new Instances[2];
-        splitData[0] = new Instances(data, 0); //Above
-        splitData[1] = new Instances(data, 0); //Below
+        splitData[0] = new Instances(data, 0);
+        splitData[1] = new Instances(data, 0);
 
-        AttributeStats as = data.attributeStats(att.index());
-
-        double max = as.numericStats.max;
-        double min = as.numericStats.min;
+        //find random split value
+        AttributeStats attStats = data.attributeStats(att.index());
+        double max = attStats.numericStats.max;
+        double min = attStats.numericStats.min;
         double random = ((Math.random() * (max - min)) + min);
-        //System.out.println("Max: " + max + " Min: " + min + " Random: " + random);
 
+        //bin instances based on random split value
         for(int i = 0; i < data.numInstances(); i++)
         {
-            Instance instanceToCheck = data.instance(i);
-            if (instanceToCheck.value(att) > random) {
-                splitData[0].add(instanceToCheck);
+            Instance checkedIns = data.instance(i);
+            if (checkedIns.value(att) > random) {
+                splitData[0].add(checkedIns);
             }
             else {
-                splitData[1].add(instanceToCheck);
+                splitData[1].add(checkedIns);
             }
         }
-        for (Instances splitDatum : splitData) {
-            splitDatum.compactify();
+        //compactify split data
+        for (Instances ins : splitData) {
+            ins.compactify();
         }
 
         Map<Instances[], Double>
@@ -74,12 +76,6 @@ public interface AttributeSplitMeasure {
 
         Map.Entry<Instances[], Double> entry = new AbstractMap.SimpleEntry<>(splitData, random);
 
-/*            for (Instance x : splitData[0]){
-                System.out.println("Above: " + x.value(att));
-            }
-            for (Instance x : splitData[1]){
-                System.out.println("Below: " + x.value(att));
-            }*/
         return entry;
 
     }

@@ -23,16 +23,6 @@ public class IGAttributeSplitMeasure implements AttributeSplitMeasure{
             attQuality = new IGAttributeSplitMeasure().computeAttributeQuality(data, att);
             System.out.println("Measure IG for Attribute " + att.name() + " splitting diagnosis: " + attQuality);
         }
-        /*
-        try {
-            ID3Coursework c = new ID3Coursework();
-            String[] options = {"-S", "i"};
-            c.setOptions(options);
-            c.buildClassifier(data);
-        }
-        catch(Exception e) {
-            System.out.println("Exception: " + e);
-        }*/
     }
 
     @Override
