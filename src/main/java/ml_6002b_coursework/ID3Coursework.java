@@ -25,6 +25,7 @@ package ml_6002b_coursework;
 import com.sun.scenario.effect.impl.sw.sse.SSEBlend_SRC_OUTPeer;
 import org.yaml.snakeyaml.events.Event;
 import scala.Array;
+import scala.Int;
 import scala.None;
 import weka.classifiers.AbstractClassifier;
 import weka.classifiers.Sourcable;
@@ -83,8 +84,7 @@ import static utilities.InstanceTools.resampleInstances;
  * @version $Revision: 6404 $ 
  */
 public class ID3Coursework
-  extends AbstractClassifier 
-  implements TechnicalInformationHandler, Sourcable {
+  extends AbstractClassifier {
 
   /** for serialization */
   static final long serialVersionUID = -2693678647096322561L;
@@ -94,6 +94,9 @@ public class ID3Coursework
 
   /** Attribute used for splitting. */
   private Attribute m_Attribute;
+
+  /** Max tree depth. default none (-1) */
+  private int m_maxDepth = -1;
 
   /**
    * random value used for splitting numeric attributes.
@@ -109,6 +112,13 @@ public class ID3Coursework
   /** Class attribute of dataset. */
   private Attribute m_ClassAttribute;
   private AttributeSplitMeasure attSplit = new IGAttributeSplitMeasure();
+
+  /** Accessor and mutator for options */
+  public int getMaxDepth() { return m_maxDepth; }
+  public void setMaxDepth(int depth) {
+    m_maxDepth = depth;
+  }
+  //public String
 
   /**
    * Returns a string describing the classifier.
@@ -197,8 +207,8 @@ public class ID3Coursework
   'c'   -   chi-squared
   'y'   -   chi-squared yates
 
-  SET TO INFORMATION GAIN BY DEFAULT
    */
+
   public void setOptions(String[] options) throws Exception {
     String splitCriteria = Utils.getOption('S', options);
     if(splitCriteria.equals("i")) {
@@ -219,6 +229,7 @@ public class ID3Coursework
       attSplit = new IGAttributeSplitMeasure();
     }
   }
+
 //retrieve options for classifier
   public String[] getOptions() {
     String[] options = new String[2];
@@ -239,6 +250,40 @@ public class ID3Coursework
     return options;
   }
 
+  //replaces set options
+  public void setSplitMeasure(char att) {
+    switch(att) {
+      case 'I': attSplit = new IGAttributeSplitMeasure(); break;
+      case 'G': attSplit = new GiniAttributeSplitMeasure(); break;
+      case 'C': attSplit = new ChiSquaredAttributeSplitMeasure(); break;
+      case 'Y': attSplit = new ChiSquaredAttributeSplitMeasure(true); break;
+      default:
+        System.out.println("Invalid split measure - set to information gain by default");
+        attSplit = new IGAttributeSplitMeasure();
+    }
+  }
+
+  //return split measure as char for recursively setting split measure
+  public char getSplitMeasureAsChar() {
+    if(attSplit instanceof IGAttributeSplitMeasure) {
+      return 'I';
+    }
+    else if(attSplit instanceof GiniAttributeSplitMeasure) {
+      return 'G';
+    }
+    else if(attSplit instanceof  ChiSquaredAttributeSplitMeasure) {
+      if(((ChiSquaredAttributeSplitMeasure) attSplit).isYates()) {
+        return 'Y';
+      } else {
+        return 'C';
+      }
+    }
+    else {
+      System.out.println("Split measure not found");
+      return 'f';
+    }
+  }
+
   /**
    * Builds Id3 decision tree classifier.
    *
@@ -254,7 +299,7 @@ public class ID3Coursework
     data = new Instances(data);
     data.deleteWithMissingClass();
     
-    makeTree(data);
+    makeTree(data, m_maxDepth);
   }
 
   /**
@@ -263,14 +308,13 @@ public class ID3Coursework
    * @param data the training data
    * @exception Exception if decision tree can't be built successfully
    */
-  private void makeTree(Instances data) throws Exception {
+  private void makeTree(Instances data, int maxDepth) throws Exception {
 
     int numInstances = data.numInstances();
     int numClasses = data.numClasses();
     Attribute classAtt = data.classAttribute();
     // Check if no instances have reached this node.
     if (numInstances == 0) {
-      Random rand= new Random();
       m_Attribute = null;
       m_ClassValue = Utils.missingValue();
       m_Distribution = new double[numClasses];
@@ -282,6 +326,7 @@ public class ID3Coursework
       m_Distribution = new double[numClasses];
       m_Distribution[(int) m_ClassValue] = numInstances;
       m_ClassAttribute = classAtt;
+
       return;
     }
 
@@ -294,9 +339,9 @@ public class ID3Coursework
     }
     m_Attribute = data.attribute(Utils.maxIndex(infoGains));
 
-    // Create leaf if info gain is zero.
+    // Create leaf if info gain is zero OR max depth reached
     // stop when there are no more attributes to split / there is only one class
-    if (Utils.eq(infoGains[m_Attribute.index()], 0)) {
+    if (Utils.eq(infoGains[m_Attribute.index()], 0) || maxDepth == 0) {
       m_Attribute = null;
       m_Distribution = new double[numClasses];
       Enumeration insEnum = data.enumerateInstances();
@@ -310,6 +355,7 @@ public class ID3Coursework
     }
     //create successors if info gain is not zero
     else {
+      //perform different splits based on attribute type
       Instances[] splitData = new Instances[0];
       if (m_Attribute.isNominal())
         splitData = attSplit.splitData(data, m_Attribute);
@@ -324,11 +370,12 @@ public class ID3Coursework
       } else {
         numValues = splitData.length;
       }
+      //create successor nodes and recursive call
       m_Successors = new ID3Coursework[numValues];
       for (int j = 0; j < numValues; j++) {
         m_Successors[j] = new ID3Coursework();
-        m_Successors[j].setOptions(this.getOptions());
-        m_Successors[j].makeTree(splitData[j]);
+        m_Successors[j].setSplitMeasure(this.getSplitMeasureAsChar());
+        m_Successors[j].makeTree(splitData[j], maxDepth-1);
       }
     }
   }
@@ -344,12 +391,14 @@ public class ID3Coursework
     throws NoSupportForMissingValuesException {
 
     if (instance.hasMissingValue()) {
-      throw new NoSupportForMissingValuesException("Id3: no missing values, "
-              + "please.");
+      throw new NoSupportForMissingValuesException("Please ensure there are no missing values");
     }
+    //base case - null attribute = leaf node
     if (m_Attribute == null) {
       return m_ClassValue;
-    } else {
+    }
+    //recursively call classifyInstance on the correct successor node
+    else {
       return m_Successors[branch(instance)].
               classifyInstance(instance);
     }
@@ -377,157 +426,7 @@ public class ID3Coursework
     }
   }
 
-  /**
-   * Prints the decision tree using the private toString method from below.
-   *
-   * @return a textual description of the classifier
-   */
-  public String toString() {
-
-    if ((m_Distribution == null) && (m_Successors == null)) {
-      return "Tree does not exist";
-    }
-    return "Id3\n\n" + toString(0);
-  }
-
-
-  /**
-   * Outputs a tree at a certain level.
-   *
-   * @param level the level at which the tree is to be printed
-   * @return the tree as string at the given level
-   */
-  private String toString(int level) {
-
-    StringBuffer text = new StringBuffer();
-    
-    if (m_Attribute == null) {
-      if (Utils.isMissingValue(m_ClassValue)) {
-        text.append(": null");
-      } else {
-        text.append(": " + m_ClassAttribute.value((int) m_ClassValue));
-      } 
-    } else {
-      for (int j = 0; j < m_Attribute.numValues(); j++) {
-        text.append("\n");
-        for (int i = 0; i < level; i++) {
-          text.append("|  ");
-        }
-        text.append(m_Attribute.name() + " = " + m_Attribute.value(j));
-        text.append(m_Successors[j].toString(level + 1));
-      }
-    }
-    return text.toString();
-  }
-
-  /**
-   * Adds this tree recursively to the buffer.
-   * 
-   * @param id          the unqiue id for the method
-   * @param buffer      the buffer to add the source code to
-   * @return            the last ID being used
-   * @throws Exception  if something goes wrong
-   */
-  protected int toSource(int id, StringBuffer buffer) throws Exception {
-    int                 result;
-    int                 i;
-    int                 newID;
-    StringBuffer[]      subBuffers;
-    
-    buffer.append("\n");
-    buffer.append("  protected static double node" + id + "(Object[] i) {\n");
-    
-    // leaf?
-    if (m_Attribute == null) {
-      result = id;
-      if (Double.isNaN(m_ClassValue)) {
-        buffer.append("    return Double.NaN;");
-      } else {
-        buffer.append("    return " + m_ClassValue + ";");
-      }
-      if (m_ClassAttribute != null) {
-        buffer.append(" // " + m_ClassAttribute.value((int) m_ClassValue));
-      }
-      buffer.append("\n");
-      buffer.append("  }\n");
-    } else {
-      buffer.append("    checkMissing(i, " + m_Attribute.index() + ");\n\n");
-      buffer.append("    // " + m_Attribute.name() + "\n");
-      
-      // subtree calls
-      subBuffers = new StringBuffer[m_Attribute.numValues()];
-      newID = id;
-      for (i = 0; i < m_Attribute.numValues(); i++) {
-        newID++;
-
-        buffer.append("    ");
-        if (i > 0) {
-          buffer.append("else ");
-        }
-        buffer.append("if (((String) i[" + m_Attribute.index() 
-            + "]).equals(\"" + m_Attribute.value(i) + "\"))\n");
-        buffer.append("      return node" + newID + "(i);\n");
-
-        subBuffers[i] = new StringBuffer();
-        newID = m_Successors[i].toSource(newID, subBuffers[i]);
-      }
-      buffer.append("    else\n");
-      buffer.append("      throw new IllegalArgumentException(\"Value '\" + i["
-          + m_Attribute.index() + "] + \"' is not allowed!\");\n");
-      buffer.append("  }\n");
-
-      // output subtree code
-      for (i = 0; i < m_Attribute.numValues(); i++) {
-        buffer.append(subBuffers[i].toString());
-      }
-      subBuffers = null;
-      
-      result = newID;
-    }
-    
-    return result;
-  }
-  
-  /**
-   * Returns a string that describes the classifier as source. The
-   * classifier will be contained in a class with the given name (there may
-   * be auxiliary classes),
-   * and will contain a method with the signature:
-   * <pre><code>
-   * public static double classify(Object[] i);
-   * </code></pre>
-   * where the array <code>i</code> contains elements that are either
-   * Double, String, with missing values represented as null. The generated
-   * code is public domain and comes with no warranty. <br/>
-   * Note: works only if class attribute is the last attribute in the dataset.
-   *
-   * @param className the name that should be given to the source class.
-   * @return the object source described by a string
-   * @throws Exception if the source can't be computed
-   */
-  public String toSource(String className) throws Exception {
-    StringBuffer        result;
-    int                 id;
-    
-    result = new StringBuffer();
-
-    result.append("class " + className + " {\n");
-    result.append("  private static void checkMissing(Object[] i, int index) {\n");
-    result.append("    if (i[index] == null)\n");
-    result.append("      throw new IllegalArgumentException(\"Null values "
-        + "are not allowed!\");\n");
-    result.append("  }\n\n");
-    result.append("  public static double classify(Object[] i) {\n");
-    id = 0;
-    result.append("    return node" + id + "(i);\n");
-    result.append("  }\n");
-    toSource(id, result);
-    result.append("}\n");
-
-    return result.toString();
-  }
-
-  public String getAtt() {
+  public String getAttName() {
     return attSplit.getClass().getSimpleName();
   }
 
@@ -550,85 +449,99 @@ public class ID3Coursework
     //Instances diagnosis = loadClassificationData("src/main/java/ml_6002b_coursework/test_data/Diagnosis_TRAIN.arff");
 
     try{
-      Instances[] splits = splitData(optdigits, 0.5);
-
       ID3Coursework id3 = new ID3Coursework();
 
       //OPTDIGITS
       //use infogain
       //initialise options
-      String[] options = new String[2];
-      options[0] = "-S";
-      options[1] = "i";
-      id3.setOptions(options);
+      //String[] options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "i";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('I');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(optdigitsTrain);
       //id3.buildClassifier(chinatownTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
       //use gini
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "g";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "g";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('G');
+      id3.setMaxDepth(-1);
       //id3.buildClassifier(chinatownTrain);
       id3.buildClassifier(optdigitsTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
       //use chisquared
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "c";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "c";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('C');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(optdigitsTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on JW Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
       //use chisquared yates
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "y";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "y";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('Y');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(optdigitsTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " with Yates on JW Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " with Yates on JW Problem has test accuracy = "
               + WekaTools.accuracy(id3, optdigitsTest));
 
       //CHINATOWN
       //use infogain
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "i";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "i";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('I');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(chinatownTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on Chinatown Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " on Chinatown Problem has test accuracy = "
               + WekaTools.accuracy(id3, chinatownTest));
 
       //use gini
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "g";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "g";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('G');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(chinatownTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on Chinatown Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " on Chinatown Problem has test accuracy = "
               + WekaTools.accuracy(id3, chinatownTest));
 
       //use chisquared
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "c";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "c";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('C');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(chinatownTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " on Chinatown Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " on Chinatown Problem has test accuracy = "
               + WekaTools.accuracy(id3, chinatownTest));
 
       //use chisquared yates
-      options = new String[2];
-      options[0] = "-S";
-      options[1] = "y";
-      id3.setOptions(options);
+      //options = new String[2];
+      //options[0] = "-S";
+      //options[1] = "y";
+      //id3.setOptions(options);
+      id3.setSplitMeasure('Y');
+      id3.setMaxDepth(-1);
       id3.buildClassifier(chinatownTrain);
-      System.out.println("Id3 using measure " + id3.getAtt() + " with Yates on Chinatown Problem has test accuracy = "
+      System.out.println("Id3 using measure " + id3.getAttName() + " with Yates on Chinatown Problem has test accuracy = "
               + WekaTools.accuracy(id3, chinatownTest));
 
     }

@@ -1,5 +1,6 @@
 package ml_6002b_coursework;
 
+import fileIO.OutFile;
 import weka.classifiers.Classifier;
 import weka.core.Attribute;
 import weka.core.Debug;
@@ -7,6 +8,7 @@ import weka.core.Instance;
 import weka.core.Instances;
 
 import java.io.FileReader;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.Random;
 
@@ -74,29 +76,59 @@ public class WekaTools {
         return dis;
     }
 
-    public static int[][] confusionMatrix(int[] predicted, int[] actual) {
-        int[][] out = new int[3][3];
-        out[0][1] = 0;
-        out[1][0] = 0;
-        out[0][2] = 1;
-        out[2][0] = 1;
+    public static double[][] confusionMatrix(double[] predicted, double[] actual, int numclasses) {
+        double[][] out = new double[numclasses][numclasses];
+        for(int i=1; i<numclasses; i++) {
+            out[0][i] = (double) (i - 1);
+            out[i][0] = (double) (i - 1);
+        }
         System.out.println(("actual/predicted = y/x"));
 
         for(int i=0; i < predicted.length; i++) {
-            if(predicted[i] == actual[i] && actual[i] == 0) {
-                out[1][1]++;
-            }
-            else if(predicted[i] == actual[i] && actual[i] == 1) {
-                out[2][2]++;
-            }
-            else if(actual[i] == 0) {
-                out[2][1]++;
-            }
-            else if(actual[i] == 1) {
-                out[1][2]++;
-            }
+            out[(int)actual[i]][(int)predicted[i]]++;
         }
         return out;
+    }
+
+    public static double balancedAccuracy(double[][] confusionMatrix) {
+        double totalTR = 0;
+        for(int i=0; i<confusionMatrix[0].length; i++) {
+            double sum = 0;
+            for(int j=0; j<confusionMatrix.length; j++) {
+                sum = sum + confusionMatrix[i][j];
+            }
+            totalTR = totalTR + (confusionMatrix[i][i] / sum);
+        }
+        totalTR = totalTR / confusionMatrix.length;
+        return totalTR * 100;
+    }
+
+    public static void generateTestResults(Classifier classifier, Instances train, Instances test, String parameter, String outputPath, String outputFile) throws Exception {
+        classifier.buildClassifier(train);
+
+        // setup output file
+        OutFile out = new OutFile(outputPath + outputFile + ".csv");
+        out.writeLine(train.relationName() + "," + classifier.getClass().getSimpleName());
+        out.writeLine(parameter);
+        out.writeLine(String.valueOf(WekaTools.accuracy(classifier, test)));
+
+        // for each instance in test
+        for (Instance ins : test) {
+            // get predicted class and probabilities of each class
+            int prediction = (int) classifier.classifyInstance(ins);
+            double[] probabilities = classifier.distributionForInstance(ins);
+
+            // write actual class and predicted class
+            out.writeString((int) ins.classValue() + "," + prediction + ",,");
+
+            // write probabilities of each class
+            StringBuilder line = new StringBuilder();
+            for (double d : probabilities) {
+                line.append(d).append(",");
+            }
+            line.deleteCharAt(line.length() - 1); // remove tailing ','
+            out.writeLine(line.toString());
+        }
     }
 
     public static int[] classifyInstances(Classifier c, Instances test) {

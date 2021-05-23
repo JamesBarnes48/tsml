@@ -49,17 +49,19 @@ public class ChiSquaredAttributeSplitMeasure implements AttributeSplitMeasure {
     public double computeAttributeQuality(Instances data, Attribute att) {
         if (data.numInstances() == 0)
             return 0;
-        Instances[] splitData = splitData(data, att);
+        Instances[] splitData;
         //use different number of values based on if attribute is nominal
         int numValues;
         if(att.isNominal()) {
+            splitData = splitData(data, att);
             numValues = att.numValues();
         } else {
+            splitData = splitDataOnNumeric(data, att).getKey();
             numValues = splitData.length;
         }
         //create contingency table for attribute
         double[][] table = new double[numValues][data.numClasses()];
-        for (int i = 0; i < att.numValues(); i++) {
+        for (int i = 0; i < numValues; i++) {
             for (Instance instance : splitData[i]) {
                 int value = (int) instance.classValue();
                 table[i][value]++;

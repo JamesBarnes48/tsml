@@ -36,14 +36,9 @@ public class TreeEnsemble
 
     private final LinkedHashMap<ID3Coursework, RandomSubset> usedAttributes = new LinkedHashMap<>();
 
-    /**
-     * The maximum depth of the trees (0 = unlimited)
-     */
-    protected int m_MaxDepth = 0;
-
     protected boolean averageDistribution = false;
 
-    private ID3Coursework classifier = new ID3Coursework();
+    private static ID3Coursework classifier = new ID3Coursework();
 
     /**
      * Returns a string describing classifier
@@ -98,45 +93,11 @@ public class TreeEnsemble
         this.averageDistribution = averageDistribution;
     }
 
+    //////////
+    //TUNE BASE CLASSIFIER
+    public int getMaxDepth() { return this.classifier.getMaxDepth(); }
+    public void setMaxDepth(int depth) { this.classifier.setMaxDepth(depth); }
 
-    public int getMaxDepth() { return m_MaxDepth; }
-
-    public void setMaxDepth(int value) { m_MaxDepth = value; }
-
-    /*
-    GET AND SET OPTIONS
-     */
-    public String[] getOptions() {
-        Vector result;
-        String[] options;
-        int i;
-
-        result = new Vector();
-
-        result.add("-I");
-        result.add("" + getNumTrees());
-
-        result.add("-K");
-        result.add("" + getNumFeatures());
-
-        result.add("-S");
-        result.add("" + getSeed());
-
-        result.add("-N");
-        result.add("" + getSampleSize());
-
-        if (getMaxDepth() > 0) {
-            result.add("-depth");
-            result.add("" + getMaxDepth());
-        }
-
-
-        options = super.getOptions();
-        for (i = 0; i < options.length; i++)
-            result.add(options[i]);
-
-        return (String[]) result.toArray(new String[result.size()]);
-    }
 
     public void setOptions(String[] options) throws Exception {
         String tmpStr;
@@ -162,12 +123,6 @@ public class TreeEnsemble
             setSeed(2);
         }
 
-        tmpStr = Utils.getOption("depth", options);
-        if (tmpStr.length() != 0) {
-            setMaxDepth(Integer.parseInt(tmpStr));
-        } else {
-            setMaxDepth(0);
-        }
 
         //set sample size between 0 and 1
         tmpStr = Utils.getOption('N', options);
@@ -186,67 +141,12 @@ public class TreeEnsemble
         Utils.checkForRemainingOptions(options);
     }
 
-    private Remove getFilter(int[] att){
-        Remove attGett = new Remove();
-        attGett.setInvertSelection(true);
-        attGett.setAttributeIndicesArray(att);
-        return attGett;
-    }
-
     @Override
     public void buildClassifier(Instances data) throws Exception {
         //initialise Random and set seed to reproduce results
         Random rand = new Random();
         rand.setSeed(m_randomSeed);
-        //calculate number of attributes in sample
-        /*int numAttributes = (int) ((data.numAttributes()) * m_sampleSize);
-        //create sample datasets
-        for(int i=0; i < m_numTrees; i++) {
-            //System.out.println("NEW TREE");
-            //randomly find indices of attributes to remove to create random sample
-            int sampleIndices[] = new int[numAttributes];
-            for(int j=0; j<(numAttributes); j++) {
-                sampleIndices[j] = rand.nextInt(data.numAttributes()-1);
-            }
-            //remove attributes at the random indices from a dataset using filter
-            Instances subset = data;
-            Remove removeFilter = new Remove();
-            removeFilter.setAttributeIndicesArray(sampleIndices);
-            removeFilter.setInputFormat(data);
-            subset = Filter.useFilter(data, removeFilter);
-            subsets[i] = subset;
 
-            //System.out.println("tree " + i);
-            Enumeration attEnum = subset.enumerateAttributes();
-            while (attEnum.hasMoreElements()) {
-                Attribute att = (Attribute) attEnum.nextElement();
-                //System.out.println(att.name());
-            }
-            //create a tree with the current filtered dataset
-            classifiers[i] = new ID3Coursework();
-            //create random options for tree
-            String[] options = new String[2];
-            options[0] = "-S";
-            int randomChoice = rand.nextInt(4);
-            switch(randomChoice) {
-                case 0:
-                    options[1] = "i";
-                    break;
-                case 1:
-                    options[1] = "g";
-                    break;
-                case 2:
-                    options[1] = "c";
-                    break;
-                case 3:
-                    options[1] = "y";
-                    break;
-            }
-            classifiers[i].setOptions(options);
-            //---set options here---//
-            classifiers[i].buildClassifier(subsets[i]);
-        }
-         */
         for (int i = 0; i < m_numTrees; i++) {
             RandomSubset attIndices = new RandomSubset();
             attIndices.setSeed(m_randomSeed + i);
@@ -319,6 +219,7 @@ public class TreeEnsemble
         System.out.println("Ensemble successfully built on data");
         //set options
         c.setVoting(true);
+        classifier.setMaxDepth(-1);
         //calculate accuracy
         double acc = WekaTools.accuracy(c, split[1]);
         System.out.println("Test accuracy: " + acc);

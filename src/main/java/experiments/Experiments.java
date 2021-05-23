@@ -17,7 +17,9 @@
 package experiments;
 
 import com.google.common.testing.GcFinalization;
+import evaluation.tuning.Tuner;
 import machine_learning.classifiers.SaveEachParameter;
+import machine_learning.classifiers.tuned.TunedClassifier;
 import machine_learning.classifiers.tuned.TunedRandomForest;
 import experiments.data.DatasetLists;
 import com.beust.jcommander.JCommander;
@@ -55,7 +57,7 @@ import java.util.Arrays;
 import java.util.Date;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
-
+import ml_6002b_coursework.TreeEnsemble;
 import machine_learning.classifiers.ensembles.SaveableEnsemble;
 import weka.core.Instance;
 import weka.core.Instances;
@@ -67,22 +69,17 @@ import static utilities.InstanceTools.*;
 /**
  * The main experimental class of the timeseriesclassification codebase. The 'main' method to run is
  setupAndRunExperiment(ExperimentalArguments expSettings)
-
  An execution of this will evaluate a single classifier on a single resample of a single dataset.
-
  Given an ExperimentalArguments object, which may be parsed from command line arguments
  or constructed in code, (and in the future, perhaps other methods such as JSON files etc),
  will load the classifier and dataset specified, prep the location to write results to,
  train the classifier - potentially generating an error estimate via cross validation on the train set
  as well - and then predict the cases of the test set.
-
  The primary outputs are the train and/or 'testFoldX.csv' files, in the so-called ClassifierResults format,
  (see the class of the same name under utilities).
-
  main(String[] args) info:
  Parses args into an ExperimentalArguments object, then calls setupAndRunExperiment(ExperimentalArguments expSettings).
  Calling with the --help argument, or calling with un-parsable parameters, will print a summary of the possible parameters.
-
  Argument key-value pairs are separated by '='. The 5 basic, always required, arguments are:
  Para name (short/long)  |    Example
  -dp --dataPath          |    --dataPath=C:/Datasets/
@@ -90,9 +87,7 @@ import static utilities.InstanceTools.*;
  -cn --classifierName    |    --classifierName=RandF
  -dn --datasetName       |    --datasetName=ItalyPowerDemand
  -f  --fold              |    --fold=1
-
  Use --help to see all the optional parameters, and more information about each of them.
-
  If running locally, it may be easier to build the ExperimentalArguments object yourself and call setupAndRunExperiment(...)
  directly.
  *
@@ -121,7 +116,6 @@ public class Experiments  {
     /**
      * Parses args into an ExperimentalArguments object, then calls setupAndRunExperiment(ExperimentalArguments expSettings).
      * Calling with the --help argument, or calling with un-parsable parameters, will print a summary of the possible parameters.
-
      Argument key-value pairs are separated by '='. The 5 basic, always required, arguments are:
      Para name (short/long)  |    Example
      -dp --dataPath          |    --dataPath=C:/Datasets/
@@ -129,9 +123,7 @@ public class Experiments  {
      -cn --classifierName    |    --classifierName=RandF
      -dn --datasetName       |    --datasetName=ItalyPowerDemand
      -f  --fold              |    --fold=1
-
      Use --help to see all the optional parameters, and more information about each of them.
-
      If running locally, it may be easier to build the ExperimentalArguments object yourself and call setupAndRunExperiment(...)
      directly, instead of building the String[] args and calling main like a lot of legacy code does.
      */
@@ -149,7 +141,7 @@ public class Experiments  {
             setupAndRunExperiment(expSettings);
         }
         else {//Manually set args
-            int folds=30;
+            int folds=1;
             String[] settings=new String[9];
 
             /*
@@ -157,10 +149,10 @@ public class Experiments  {
              */
 //            String[] classifiers={"TSF_I","RISE_I","STC_I","CBOSS_I","HIVE-COTEn_I"};
 //            String classifier=classifiers[2];
-            String classifier="STC";//Classifier name: See ClassifierLists for valid options
+            String classifier="";//Classifier name: See ClassifierLists for valid options
 
-            settings[0]="-dp=C:\\Data Working Area\\Datasets"; //Where to get datasets
-            settings[1]="-rp=C:\\Experiments\\Results\\"; //Where to write results
+            settings[0]="-dp=src/main/java/ml_6002b_coursework/test_data/"; //Where to get datasets
+            settings[1]="-rp=src/main/java/ml_6002b_coursework/test_result/"; //Where to write results
             settings[2]="-gtf=false"; //Whether to generate train files or not
             settings[3]="-cn="+classifier; //Classifier name
             settings[4]="-dn="; //Problem name, don't change here as it is overwritten by probFiles
@@ -169,7 +161,7 @@ public class Experiments  {
             settings[7]="-d=true"; //Debugging
             settings[8]="--force=true"; //Overwrites existing results if true, otherwise set to false
 
-            String[] probFiles= {"ItalyPowerDemand"}; //Problem name(s)
+            String[] probFiles= {"optdigits"}; //Problem name(s)
 //            String[] probFiles= DatasetLists.fixedLengthMultivariate;
             /*
              * END OF SETTINGS
@@ -180,9 +172,20 @@ public class Experiments  {
                 System.out.println("\t"+str);
             System.out.println("");
 
+            TunedClassifier classifier_ = new TunedClassifier();
+            classifier_.setClassifier(new TreeEnsemble());
+//            classifier_.setTuner(new Tuner(new CrossValidationEvaluator()));
+
             boolean threaded=true;
             if (threaded) {
-                ExperimentalArguments expSettings = new ExperimentalArguments(settings);
+                ExperimentalArguments expSettings = new ExperimentalArguments();
+                expSettings.classifierName = "TreeEnsemble";
+                expSettings.dataReadLocation = "src/main/java/ml_6002b_coursework/test_data/";
+                expSettings.resultsWriteLocation = "src/main/java/ml_6002b_coursework/test_result/";
+//                expSettings.datasetName = "Chinatown";
+                expSettings.forceEvaluation = false;
+                expSettings.classifier = classifier_;
+//                expSettings.run();
                 System.out.println("Threaded experiment with "+expSettings);
 //              setupAndRunMultipleExperimentsThreaded(expSettings, classifiers,probFiles,0,folds);
                 setupAndRunMultipleExperimentsThreaded(expSettings, new String[]{classifier},null,probFiles,0,folds);
@@ -224,7 +227,7 @@ public class Experiments  {
             DatasetLoading.setDebug(debug); //TODO when we go full enterprise and figure out how to properly do logging, clean this up
         }
         LOGGER.log(Level.FINE, expSettings.toString());
-
+        System.out.println("setting up...");
         // if a pre-instantiated classifier instance hasn't been supplied, generate one here
         if (expSettings.classifier == null) {
             // if a classifier-generating-function has been given (typically in the case of bespoke classifiers wanted in threaded exps),
@@ -237,7 +240,9 @@ public class Experiments  {
                 // Cases in the classifierlist can now change the classifier name to reflect particular parameters wanting to be
                 // represented as different classifiers, e.g. ST_1day, ST_2day
                 // The set classifier call is therefore made before defining paths that are dependent on the classifier name
-                expSettings.classifier = ClassifierLists.setClassifier(expSettings);
+                TunedClassifier classifier = new TunedClassifier();
+                classifier.setClassifier(new TreeEnsemble());
+                expSettings.classifier = classifier;  //ClassifierLists.setClassifier(expSettings);
             }
         }
 
@@ -245,7 +250,7 @@ public class Experiments  {
         //Check whether results already exists, if so and force evaluation is false: just quit
         if (quitEarlyDueToResultsExistence(expSettings))
             return null;
-
+        System.out.println("load data...");
         Instances[] data = DatasetLoading.sampleDataset(expSettings.dataReadLocation, expSettings.datasetName, expSettings.foldId);
         setupClassifierExperimentalOptions(expSettings, expSettings.classifier, data[0]);
         ClassifierResults[] results = runExperiment(expSettings, data[0], data[1], expSettings.classifier);
@@ -281,10 +286,12 @@ public class Experiments  {
         LOGGER.log(Level.FINE, "Preamble complete, real experiment starting.");
 
         try {
+            System.out.println("training...");
             ClassifierResults trainResults = training(expSettings, classifier, trainSet);
             postTrainingOperations(expSettings, classifier);
+            System.out.println("testing...");
             ClassifierResults testResults = testing(expSettings, classifier, testSet, trainResults);
-
+            System.out.println("experiment ended");
             experimentResults = new ClassifierResults[] {trainResults, testResults};
         }
         catch (Exception e) {
@@ -547,8 +554,10 @@ public class Experiments  {
 
         //todo just enforce nanos everywhere, this is ridiculous. this needs overhaul
 
+        long estimateToUpdateWith = 0; // no estimate by default
+        long timingToUpdateWith = buildTime; //the timing that experiments measured by default
+
         if (exp.generateErrorEstimateOnTrainSet) { //want timings and full predictions
-            long timingToUpdateWith = buildTime; //the timing that experiments measured by default
             TimeUnit timeUnitToUpdateWith = expTimeUnit;
             String paras = "No parameter info";
 
@@ -569,7 +578,7 @@ public class Experiments  {
             }
 
             timingToUpdateWith = trainResults.getTimeUnit().convert(timingToUpdateWith, timeUnitToUpdateWith);
-            long estimateToUpdateWith = trainResults.getTimeUnit().convert(trainResults.getErrorEstimateTime(), timeUnitToUpdateWith);
+            estimateToUpdateWith = trainResults.getTimeUnit().convert(trainResults.getErrorEstimateTime(), timeUnitToUpdateWith);
 
             //update the externally produced results with the appropriate timing
             trainResults.setBuildTime(timingToUpdateWith);
@@ -641,7 +650,7 @@ public class Experiments  {
                     ((Checkpointable) classifier).setCheckpointTimeHours((int) TimeUnit.HOURS.convert(expSettings.checkpointInterval, TimeUnit.NANOSECONDS));
                 }
                 //else, as default
-                    // want to checkpoint at classifier's discretion
+                // want to checkpoint at classifier's discretion
             }
         }
 
@@ -941,19 +950,15 @@ public class Experiments  {
 
         /*
         bespoke classifier example usage:
-
         Experiments.ExperimentalArguments standardArgs = new Experiments.ExperimentalArguments();
         standardArgs.dataReadLocation = "src/main/java/experiments/data/uci/";
         standardArgs.resultsWriteLocation = "C:/Temp/tests/";
-
         String[] classifierNames = { "ED", "RandF", "BespokeEnsemble" };
-
         Supplier<Classifier> ensembleSupplier = () -> {
             CAWPE cawpe = new CAWPE();
             cawpe.setClassifiersForBuildingInMemory(new Classifier[] { new ED1NN(), new RandomForest() });
             return cawpe;
         };
-
         List<Supplier<Classifier>> classifierGenerators = Arrays.asList(
             () -> {return new ED1NN();},
             () -> {return new RandomForest();},
@@ -961,9 +966,7 @@ public class Experiments  {
         );
         String[] datasets = { "hayes-roth", "iris", "teaching" };
         int numFolds = 3;
-
         Experiments.setupAndRunMultipleExperimentsThreaded(standardArgs, classifierNames, classifierGenerators, datasets, 0, numFolds);
-
          */
     }
 
@@ -1205,7 +1208,7 @@ public class Experiments  {
                                     field.getName().equals("foldId") ||
                                     field.getName().equals("classifier") ||
                                     field.getName().equals("classifierGenerator")
-                                )
+                            )
                                 continue;
 
                             try {
@@ -1263,7 +1266,7 @@ public class Experiments  {
                     checkpointInterval = parseTiming(checkpointingStr);
 
                 }
-          }
+            }
 
             //populating the contract times if present
             if (contractTrainTimeString != null)

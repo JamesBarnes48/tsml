@@ -58,7 +58,7 @@ public interface AttributeSplitMeasure {
         for(int i = 0; i < data.numInstances(); i++)
         {
             Instance checkedIns = data.instance(i);
-            if (checkedIns.value(att) > random) {
+            if (checkedIns.value(att) < random) {
                 splitData[0].add(checkedIns);
             }
             else {
@@ -69,10 +69,6 @@ public interface AttributeSplitMeasure {
         for (Instances ins : splitData) {
             ins.compactify();
         }
-
-        Map<Instances[], Double>
-                result = Collections
-                .singletonMap(splitData, random);
 
         Map.Entry<Instances[], Double> entry = new AbstractMap.SimpleEntry<>(splitData, random);
 

@@ -28,12 +28,24 @@ public class IGAttributeSplitMeasure implements AttributeSplitMeasure{
     @Override
     public double computeAttributeQuality(Instances data, Attribute att) {
         double infoGain = computeEntropy(data);
-        Instances[] splitData = splitData(data, att);
-        for (int j = 0; j < att.numValues(); j++) {
-            if (splitData[j].numInstances() > 0) {
-                infoGain -= ((double) splitData[j].numInstances() /
+        Instances[] splitData;
+        int numvals;
+        //if nominal attribute use regular splitdata and set numvals
+        if (att.isNominal()) {
+            splitData = splitData(data, att);
+            numvals = att.numValues();
+        }
+        //if continuous use numeric splitdata and set numvals
+        else {
+            splitData = splitDataOnNumeric(data, att).getKey();
+            numvals = splitData.length;
+        }
+
+        for (int i = 0; i < numvals; i++) {
+            if (splitData[i].numInstances() > 0) {
+                infoGain -= ((double) splitData[i].numInstances() /
                         (double) data.numInstances()) *
-                        computeEntropy(splitData[j]);
+                        computeEntropy(splitData[i]);
             }
         }
         return infoGain;
